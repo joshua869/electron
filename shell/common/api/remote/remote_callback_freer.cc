@@ -4,11 +4,10 @@
 
 #include "shell/common/api/remote/remote_callback_freer.h"
 
-#include "base/strings/utf_string_conversions.h"
-#include "base/values.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "electron/shell/common/api/api.mojom.h"
+#include "electron/shell/common/gin_converters/blink_converter_gin_adapter.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 
 namespace electron {
@@ -17,24 +16,25 @@ namespace electron {
 void RemoteCallbackFreer::BindTo(v8::Isolate* isolate,
                                  v8::Local<v8::Object> target,
                                  int frame_id,
-                                 const std::string& context_id,
-                                 int object_id,
+                                 const std::string& channel,
+                                 v8::Local<v8::Value> args,
                                  content::WebContents* web_contents) {
-  new RemoteCallbackFreer(isolate, target, frame_id, context_id, object_id,
+  new RemoteCallbackFreer(isolate, target, frame_id, channel, args,
                           web_contents);
 }
 
 RemoteCallbackFreer::RemoteCallbackFreer(v8::Isolate* isolate,
                                          v8::Local<v8::Object> target,
                                          int frame_id,
-                                         const std::string& context_id,
-                                         int object_id,
+                                         const std::string& channel,
+                                         v8::Local<v8::Value> args,
                                          content::WebContents* web_contents)
     : ObjectLifeMonitor(isolate, target),
       content::WebContentsObserver(web_contents),
       frame_id_(frame_id),
-      context_id_(context_id),
-      object_id_(object_id) {}
+      channel_(channel) {
+  mate::ConvertFromV8(isolate, args, &args_);
+}
 
 RemoteCallbackFreer::~RemoteCallbackFreer() = default;
 
@@ -48,7 +48,8 @@ void RemoteCallbackFreer::RunDestructor() {
     mojom::ElectronRendererAssociatedPtr electron_ptr;
     (*iter)->GetRemoteAssociatedInterfaces()->GetInterface(
         mojo::MakeRequest(&electron_ptr));
-    electron_ptr->DereferenceRemoteJSCallback(context_id_, object_id_);
+    electron_ptr->Message(true /* internal */, false /* send_to_all */,
+                          channel_, std::move(args_), 0 /* sender_id */);
   }
 
   Observe(nullptr);
